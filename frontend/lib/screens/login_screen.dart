@@ -63,7 +63,13 @@ class _LoginScreenState extends State<LoginScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: const Color(0xFF6366F1).withValues(alpha: 0.15), // Indigo
-                blurRadius: 120,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                    blurRadius: 120,
+                    spreadRadius: 50,
+                  ),
+                ],
               ),
             ),
           ),
@@ -76,7 +82,12 @@ class _LoginScreenState extends State<LoginScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: const Color(0xFFEC4899).withValues(alpha: 0.12), // Pink
-                blurRadius: 150,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFEC4899).withValues(alpha: 0.12),
+                    blurRadius: 150,
+                  ),
+                ],
               ),
             ),
           ),
