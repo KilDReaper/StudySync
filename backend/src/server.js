@@ -16,6 +16,6 @@ const startServer = async () => {
 
 startServer().catch((error) => {
   // eslint-disable-next-line no-console
-  console.error('Failed to start server:', error.message);
+  console.error(error);
   process.exit(1);
 });

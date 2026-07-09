@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
+import 'providers/tracker_provider.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 
@@ -10,6 +11,7 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()..tryAutoLogin()),
+        ChangeNotifierProvider(create: (_) => TrackerProvider()..loadData()),
       ],
       child: const StudySyncApp(),
     ),
@@ -25,12 +27,12 @@ class StudySyncApp extends StatelessWidget {
       title: 'StudySync',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: const Color(0xFF0F172A), // Slate 900
-        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+        scaffoldBackgroundColor: const Color(0xFF0A1128), // Deep Blue Figma BG
+        textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme),
         colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF6366F1), // Indigo
-          secondary: Color(0xFF8B5CF6), // Violet
-          surface: Color(0xFF1E293B),
+          primary: Color(0xFF4D7DF2), // Figma primary blue
+          secondary: Color(0xFF4D7DF2),
+          surface: Color(0xFF132A60), // Dark blue card surface
         ),
       ),
       home: const AuthWrapper(),
@@ -58,7 +60,6 @@ class AuthWrapper extends StatelessWidget {
         return const DashboardScreen();
       case AuthStatus.unauthenticated:
       case AuthStatus.authenticating:
-      default:
         return const LoginScreen();
     }
   }
