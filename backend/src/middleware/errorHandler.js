@@ -1,49 +1,73 @@
 const AppError = require('../utils/AppError');
 
-const notFound = (req, _res, next) => {
-  next(new AppError(`Route not found: ${req.originalUrl}`, 404));
+const handleCastErrorDB = (err) => {
+  const message = `Invalid ${err.path}: ${err.value}.`;
+  return new AppError(message, 400);
 };
 
-const errorHandler = (err, req, res, _next) => {
-  const statusCode = err.statusCode || 500;
-  const response = {
-    status: err.status || 'error',
-    message: err.message || 'Internal server error',
-  };
+const handleDuplicateFieldsDB = (err) => {
+  const match = err.errmsg ? err.errmsg.match(/(["'])(\\?.)*?\1/) : null;
+  const value = match ? match[0] : '';
+  const message = `Duplicate field value: ${value}. Please use another value!`;
+  return new AppError(message, 409);
+};
 
-  if (process.env.NODE_ENV !== 'production') {
-    response.stack = err.stack;
-    response.path = req.originalUrl;
+const handleValidationErrorDB = (err) => {
+  const errors = Object.values(err.errors).map((el) => el.message);
+  const message = `Invalid input data. ${errors.join('. ')}`;
+  return new AppError(message, 400);
+};
+
+const handleJWTError = () => new AppError('Invalid token. Please log in again!', 401);
+
+const handleJWTExpiredError = () => new AppError('Your token has expired! Please log in again.', 401);
+
+const sendErrorDev = (err, req, res) => {
+  res.status(err.statusCode).json({
+    status: err.status,
+    error: err,
+    message: err.message,
+    stack: err.stack,
+  });
+};
+
+const sendErrorProd = (err, req, res) => {
+  if (err.isOperational) {
+    res.status(err.statusCode).json({
+      status: err.status,
+      message: err.message,
+    });
+  } else {
+    // eslint-disable-next-line no-console
+    console.error('ERROR 💥', err);
+    res.status(500).json({
+      status: 'error',
+      message: 'Something went very wrong!',
+    });
   }
+};
 
-  if (err.name === 'ValidationError') {
-    response.status = 'fail';
-    response.message = Object.values(err.errors)
-      .map((item) => item.message)
-      .join('. ');
+const errorHandler = (err, req, res, next) => {
+  err.statusCode = err.statusCode || 500;
+  err.status = err.status || 'error';
+
+  if (process.env.NODE_ENV === 'development') {
+    sendErrorDev(err, req, res);
+  } else {
+    let error = Object.assign(err);
+
+    if (error.name === 'CastError') error = handleCastErrorDB(error);
+    if (error.code === 11000) error = handleDuplicateFieldsDB(error);
+    if (error.name === 'ValidationError') error = handleValidationErrorDB(error);
+    if (error.name === 'JsonWebTokenError') error = handleJWTError();
+    if (error.name === 'TokenExpiredError') error = handleJWTExpiredError();
+
+    sendErrorProd(error, req, res);
   }
+};
 
-  if (err.code === 11000) {
-    response.status = 'fail';
-    response.message = 'Duplicate field value. Please use another value.';
-  }
-
-  if (err.name === 'CastError') {
-    response.status = 'fail';
-    response.message = `Invalid ${err.path}: ${err.value}`;
-  }
-
-  if (err.name === 'JsonWebTokenError') {
-    response.status = 'fail';
-    response.message = 'Invalid token. Please log in again.';
-  }
-
-  if (err.name === 'TokenExpiredError') {
-    response.status = 'fail';
-    response.message = 'Token expired. Please log in again.';
-  }
-
-  return res.status(statusCode).json(response);
+const notFound = (req, res, next) => {
+  next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 };
 
 module.exports = {

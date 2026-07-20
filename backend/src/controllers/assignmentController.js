@@ -1,38 +1,25 @@
 const Assignment = require('../models/Assignment');
-const Notification = require('../models/Notification');
 const AppError = require('../utils/AppError');
 const catchAsync = require('../utils/catchAsync');
 const { buildPagination } = require('../utils/queryHelpers');
 
 const ownedQuery = (req, id) => (req.user.role === 'admin' ? { _id: id } : { _id: id, userId: req.user._id });
 
-const mapFileAttachment = (file) => {
-  if (!file) {
-    return undefined;
+const createAssignment = catchAsync(async (req, res) => {
+  const { title, subject, deadline, progress } = req.body;
+  let fileAttachment = '';
+
+  if (req.file) {
+    fileAttachment = `/uploads/${req.file.filename}`;
   }
 
-  return {
-    url: `/uploads/${file.filename}`,
-    filename: file.filename,
-    mimetype: file.mimetype,
-    size: file.size,
-  };
-};
-
-const createAssignment = catchAsync(async (req, res) => {
   const assignment = await Assignment.create({
-    ...req.body,
-    fileAttachment: mapFileAttachment(req.file),
-    submissionStatus: req.file ? 'submitted' : req.body.submissionStatus,
+    title,
+    subject,
+    deadline,
+    progress: progress ? parseInt(progress, 10) : 0,
+    fileAttachment,
     userId: req.user._id,
-  });
-
-  await Notification.create({
-    userId: req.user._id,
-    title: 'Assignment created',
-    message: `Assignment "${assignment.title}" has been added to your tracker.`,
-    type: 'assignment',
-    meta: { assignmentId: assignment._id },
   });
 
   res.status(201).json({
@@ -44,22 +31,17 @@ const createAssignment = catchAsync(async (req, res) => {
 
 const getAssignments = catchAsync(async (req, res) => {
   const { page, limit, skip } = buildPagination(req.query);
-  const filter = { userId: req.user.role === 'admin' ? { $exists: true } : req.user._id };
+  const filter = req.user.role === 'admin' ? {} : { userId: req.user._id };
 
-  if (req.query.subject) filter.subject = new RegExp(req.query.subject, 'i');
-  if (req.query.search) {
-    filter.$or = [
-      { title: new RegExp(req.query.search, 'i') },
-      { subject: new RegExp(req.query.search, 'i') },
-    ];
+  if (req.query.submissionStatus) {
+    filter.submissionStatus = req.query.submissionStatus;
   }
-  if (req.query.submissionStatus) filter.submissionStatus = req.query.submissionStatus;
-
-  const sortBy = req.query.sortBy || 'deadline';
-  const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+  if (req.query.subject) {
+    filter.subject = { $regex: req.query.subject, $options: 'i' };
+  }
 
   const [assignments, total] = await Promise.all([
-    Assignment.find(filter).sort({ [sortBy]: sortOrder }).skip(skip).limit(limit),
+    Assignment.find(filter).sort({ deadline: 1 }).skip(skip).limit(limit),
     Assignment.countDocuments(filter),
   ]);
 
@@ -73,7 +55,6 @@ const getAssignments = catchAsync(async (req, res) => {
 
 const getAssignment = catchAsync(async (req, res, next) => {
   const assignment = await Assignment.findOne(ownedQuery(req, req.params.id));
-
   if (!assignment) {
     return next(new AppError('Assignment not found', 404));
   }
@@ -85,16 +66,17 @@ const getAssignment = catchAsync(async (req, res, next) => {
 });
 
 const updateAssignment = catchAsync(async (req, res, next) => {
-  const update = { ...req.body };
+  const updates = { ...req.body };
+
   if (req.file) {
-    update.fileAttachment = mapFileAttachment(req.file);
-    update.submissionStatus = 'submitted';
+    updates.fileAttachment = `/uploads/${req.file.filename}`;
   }
 
-  const assignment = await Assignment.findOneAndUpdate(ownedQuery(req, req.params.id), update, {
-    new: true,
-    runValidators: true,
-  });
+  const assignment = await Assignment.findOneAndUpdate(
+    ownedQuery(req, req.params.id),
+    updates,
+    { new: true, runValidators: true }
+  );
 
   if (!assignment) {
     return next(new AppError('Assignment not found', 404));
@@ -108,9 +90,11 @@ const updateAssignment = catchAsync(async (req, res, next) => {
 });
 
 const updateSubmissionStatus = catchAsync(async (req, res, next) => {
+  const { submissionStatus } = req.body;
+
   const assignment = await Assignment.findOneAndUpdate(
     ownedQuery(req, req.params.id),
-    { submissionStatus: req.body.submissionStatus },
+    { submissionStatus },
     { new: true, runValidators: true }
   );
 
@@ -127,7 +111,6 @@ const updateSubmissionStatus = catchAsync(async (req, res, next) => {
 
 const deleteAssignment = catchAsync(async (req, res, next) => {
   const assignment = await Assignment.findOneAndDelete(ownedQuery(req, req.params.id));
-
   if (!assignment) {
     return next(new AppError('Assignment not found', 404));
   }
@@ -140,9 +123,9 @@ const deleteAssignment = catchAsync(async (req, res, next) => {
 
 module.exports = {
   createAssignment,
-  deleteAssignment,
-  getAssignment,
   getAssignments,
+  getAssignment,
   updateAssignment,
   updateSubmissionStatus,
+  deleteAssignment,
 };

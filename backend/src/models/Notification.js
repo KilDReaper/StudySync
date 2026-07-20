@@ -6,23 +6,24 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Title is required'],
       trim: true,
-      index: true,
     },
     message: {
       type: String,
       required: [true, 'Message is required'],
       trim: true,
     },
-    type: {
-      type: String,
-      enum: ['reminder', 'deadline', 'session', 'assignment', 'goal', 'system'],
-      default: 'system',
-      index: true,
-    },
-    readStatus: {
+    read: {
       type: Boolean,
       default: false,
-      index: true,
+    },
+    type: {
+      type: String,
+      enum: ['reminder', 'achievement', 'alert'],
+      default: 'alert',
+    },
+    meta: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -30,16 +31,10 @@ const notificationSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    meta: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
-    },
   },
   {
     timestamps: true,
   }
 );
-
-notificationSchema.index({ userId: 1, readStatus: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Notification', notificationSchema);

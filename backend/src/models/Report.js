@@ -2,41 +2,44 @@ const mongoose = require('mongoose');
 
 const reportSchema = new mongoose.Schema(
   {
-    reportedBy: {
+    contentType: {
+      type: String,
+      required: [true, 'Content type is required'],
+      enum: ['task', 'session', 'habit', 'assignment'],
+    },
+    contentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: [true, 'Content ID is required'],
+    },
+    reason: {
+      type: String,
+      required: [true, 'Reason is required'],
+      trim: true,
+    },
+    reporter: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
       index: true,
     },
-    contentType: {
-      type: String,
-      required: true,
-      trim: true,
-      index: true,
-    },
-    contentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true,
-      index: true,
-    },
-    reason: {
-      type: String,
-      required: true,
-      trim: true,
-    },
     status: {
       type: String,
-      enum: ['pending', 'reviewed', 'resolved', 'rejected'],
+      enum: ['pending', 'reviewed', 'resolved'],
       default: 'pending',
-      index: true,
     },
-    notes: String,
+    notes: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
   },
   {
     timestamps: true,
   }
 );
-
-reportSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Report', reportSchema);

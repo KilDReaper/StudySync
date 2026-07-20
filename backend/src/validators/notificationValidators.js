@@ -1,6 +1,10 @@
 const { param } = require('express-validator');
 
-const notificationIdValidation = [param('id').isMongoId().withMessage('Invalid notification id')];
+const notificationIdValidation = [
+  param('id')
+    .isMongoId()
+    .withMessage('Invalid notification ID'),
+];
 
 module.exports = {
   notificationIdValidation,

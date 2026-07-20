@@ -1,86 +1,70 @@
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const RefreshToken = require('../models/RefreshToken');
 const AppError = require('../utils/AppError');
 const catchAsync = require('../utils/catchAsync');
-const {
-  clearAuthCookies,
-  generateTokenPair,
-  hashToken,
-  setAuthCookies,
-} = require('../utils/tokens');
-const { sendPasswordResetEmail } = require('../services/emailService');
+const { signAccessToken, signRefreshToken, sendTokenResponse } = require('../utils/tokens');
+const { sendEmail } = require('../services/emailService');
 
-const refreshExpiryDays = 7;
-
-const createAuthSession = async (user, req, res) => {
-  const { accessToken, refreshToken } = generateTokenPair(user);
-  const expiresAt = new Date(Date.now() + refreshExpiryDays * 24 * 60 * 60 * 1000);
-
-  await RefreshToken.create({
-    userId: user._id,
-    tokenHash: hashToken(refreshToken),
-    userAgent: req.get('user-agent') || '',
-    ipAddress: req.ip,
-    expiresAt,
-  });
-
-  setAuthCookies(res, accessToken, refreshToken);
-  return { accessToken };
-};
-
-const sanitizeUser = (user) => user.toJSON();
-
-const register = catchAsync(async (req, res) => {
+const register = catchAsync(async (req, res, next) => {
   const { fullName, email, password } = req.body;
+
+  const existingUser = await User.findOne({ email });
+  if (existingUser) {
+    return next(new AppError('Email address already in use', 409));
+  }
+
+  const isFirstUser = (await User.countDocuments({})) === 0;
+  const role = isFirstUser ? 'admin' : 'student';
 
   const user = await User.create({
     fullName,
     email,
     password,
-    profilePicture: req.file ? `/uploads/${req.file.filename}` : '',
+    role,
   });
 
-  const session = await createAuthSession(user, req, res);
+  const accessToken = signAccessToken(user._id);
+  const refreshToken = signRefreshToken(user._id);
 
-  res.status(201).json({
-    status: 'success',
-    message: 'User registered successfully',
-    accessToken: session.accessToken,
-    data: {
-      user: sanitizeUser(user),
-    },
+  await RefreshToken.create({
+    token: refreshToken,
+    userId: user._id,
+    expiresAt: new Date(Date.now() + (parseInt(process.env.JWT_REFRESH_EXPIRES_IN, 10) || 7) * 24 * 60 * 60 * 1000),
   });
+
+  sendTokenResponse(res, 201, user, accessToken, refreshToken);
 });
 
 const login = catchAsync(async (req, res, next) => {
   const { email, password } = req.body;
-  const user = await User.findOne({ email }).select('+password');
 
+  const user = await User.findOne({ email }).select('+password');
   if (!user || !(await user.comparePassword(password))) {
-    return next(new AppError('Invalid email or password', 401));
+    return next(new AppError('Incorrect email or password', 401));
   }
 
-  const session = await createAuthSession(user, req, res);
+  const accessToken = signAccessToken(user._id);
+  const refreshToken = signRefreshToken(user._id);
 
-  res.status(200).json({
-    status: 'success',
-    message: 'Logged in successfully',
-    accessToken: session.accessToken,
-    data: {
-      user: sanitizeUser(user),
-    },
+  await RefreshToken.create({
+    token: refreshToken,
+    userId: user._id,
+    expiresAt: new Date(Date.now() + (parseInt(process.env.JWT_REFRESH_EXPIRES_IN, 10) || 7) * 24 * 60 * 60 * 1000),
   });
+
+  sendTokenResponse(res, 200, user, accessToken, refreshToken);
 });
 
 const logout = catchAsync(async (req, res) => {
-  const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+  const refreshToken = req.cookies.refreshToken || req.body.refreshToken;
 
   if (refreshToken) {
-    await RefreshToken.findOneAndDelete({ tokenHash: hashToken(refreshToken) });
+    await RefreshToken.findOneAndDelete({ token: refreshToken });
   }
 
-  clearAuthCookies(res);
+  res.clearCookie('refreshToken');
   res.status(200).json({
     status: 'success',
     message: 'Logged out successfully',
@@ -88,168 +72,178 @@ const logout = catchAsync(async (req, res) => {
 });
 
 const refreshToken = catchAsync(async (req, res, next) => {
-  const token = req.cookies?.refreshToken || req.body?.refreshToken;
+  const token = req.cookies.refreshToken || req.body.refreshToken;
 
   if (!token) {
-    return next(new AppError('Refresh token is required', 401));
+    return next(new AppError('Refresh token is required', 400));
+  }
+
+  const existingToken = await RefreshToken.findOne({ token });
+  if (!existingToken || existingToken.expiresAt < new Date()) {
+    if (existingToken) await RefreshToken.deleteOne({ _id: existingToken._id });
+    return next(new AppError('Invalid or expired refresh token', 401));
   }
 
   let decoded;
   try {
-    decoded = require('jsonwebtoken').verify(token, process.env.JWT_REFRESH_SECRET);
-  } catch (error) {
-    return next(error);
+    decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+  } catch (err) {
+    return next(new AppError('Invalid or expired refresh token', 401));
   }
 
-  const tokenRecord = await RefreshToken.findOne({ tokenHash: hashToken(token), userId: decoded.sub });
-  if (!tokenRecord || tokenRecord.revokedAt) {
-    return next(new AppError('Refresh token is invalid or revoked', 401));
-  }
-
-  const user = await User.findById(decoded.sub);
+  const user = await User.findById(decoded.id);
   if (!user) {
-    return next(new AppError('The user belonging to this token no longer exists.', 401));
+    return next(new AppError('User not found', 404));
   }
 
-  await RefreshToken.findOneAndDelete({ _id: tokenRecord._id });
-  const session = await createAuthSession(user, req, res);
+  await RefreshToken.deleteOne({ _id: existingToken._id });
 
-  res.status(200).json({
-    status: 'success',
-    message: 'Token refreshed successfully',
-    accessToken: session.accessToken,
+  const newAccessToken = signAccessToken(user._id);
+  const newRefreshToken = signRefreshToken(user._id);
+
+  await RefreshToken.create({
+    token: newRefreshToken,
+    userId: user._id,
+    expiresAt: new Date(Date.now() + (parseInt(process.env.JWT_REFRESH_EXPIRES_IN, 10) || 7) * 24 * 60 * 60 * 1000),
   });
+
+  sendTokenResponse(res, 200, user, newAccessToken, newRefreshToken);
 });
 
-const forgotPassword = catchAsync(async (req, res) => {
-  const { email } = req.body;
-  const user = await User.findOne({ email });
-
+const forgotPassword = catchAsync(async (req, res, next) => {
+  const user = await User.findOne({ email: req.body.email });
   if (!user) {
-    return res.status(200).json({
-      status: 'success',
-      message: 'If the email exists, password reset instructions have been sent',
-    });
+    return next(new AppError('There is no user with that email address.', 404));
   }
 
   const resetToken = crypto.randomBytes(32).toString('hex');
   user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-  user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
+  user.resetPasswordExpires = Date.now() + 10 * 60 * 1000;
+
   await user.save({ validateBeforeSave: false });
 
-  const resetUrl = `${process.env.RESET_PASSWORD_URL || 'http://localhost:3000/reset-password'}?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+  const resetURL = `${process.env.RESET_PASSWORD_URL}/${resetToken}`;
+  const message = `Forgot your password? Reset it here: ${resetURL}\nIf you didn't forget your password, please ignore this email!`;
 
-  await sendPasswordResetEmail({
-    to: user.email,
-    resetUrl,
-    name: user.fullName,
-  });
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: 'Your password reset token (valid for 10 mins)',
+      message,
+    });
 
-  res.status(200).json({
-    status: 'success',
-    message: 'Password reset instructions sent',
-  });
+    res.status(200).json({
+      status: 'success',
+      message: 'Password reset instructions sent to email',
+    });
+  } catch (err) {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save({ validateBeforeSave: false });
+    return next(new AppError('There was an error sending the email. Try again later.', 500));
+  }
 });
 
 const resetPassword = catchAsync(async (req, res, next) => {
-  const { token } = req.params;
-  const { email, newPassword } = req.body;
+  const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
 
-  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
   const user = await User.findOne({
-    email,
     resetPasswordToken: hashedToken,
     resetPasswordExpires: { $gt: Date.now() },
-  }).select('+password');
+  });
 
   if (!user) {
-    return next(new AppError('Reset token is invalid or expired', 400));
+    return next(new AppError('Token is invalid or has expired', 400));
   }
 
-  user.password = newPassword;
+  user.password = req.body.password;
   user.resetPasswordToken = undefined;
   user.resetPasswordExpires = undefined;
-  user.passwordChangedAt = new Date();
+  user.passwordChangedAt = Date.now();
   await user.save();
-  await RefreshToken.deleteMany({ userId: user._id });
-  clearAuthCookies(res);
 
+  const accessToken = signAccessToken(user._id);
+  const refreshToken = signRefreshToken(user._id);
+
+  await RefreshToken.create({
+    token: refreshToken,
+    userId: user._id,
+    expiresAt: new Date(Date.now() + (parseInt(process.env.JWT_REFRESH_EXPIRES_IN, 10) || 7) * 24 * 60 * 60 * 1000),
+  });
+
+  sendTokenResponse(res, 200, user, accessToken, refreshToken);
+});
+
+const getMe = catchAsync(async (req, res) => {
   res.status(200).json({
     status: 'success',
-    message: 'Password reset successfully',
+    data: {
+      user: req.user,
+    },
   });
 });
 
 const updateProfile = catchAsync(async (req, res, next) => {
+  const { fullName, email } = req.body;
   const updates = {};
-  if (req.body.fullName) updates.fullName = req.body.fullName;
-  if (req.body.email) updates.email = req.body.email;
-  if (req.file) updates.profilePicture = `/uploads/${req.file.filename}`;
+
+  if (fullName) updates.fullName = fullName;
+  if (email) {
+    const existing = await User.findOne({ email });
+    if (existing && existing._id.toString() !== req.user._id.toString()) {
+      return next(new AppError('Email address already in use', 409));
+    }
+    updates.email = email;
+  }
+
+  if (req.file) {
+    updates.profilePicture = `/uploads/${req.file.filename}`;
+  }
 
   const user = await User.findByIdAndUpdate(req.user._id, updates, {
     new: true,
     runValidators: true,
   });
 
-  if (!user) {
-    return next(new AppError('User not found', 404));
-  }
-
   res.status(200).json({
     status: 'success',
     message: 'Profile updated successfully',
-    data: {
-      user: sanitizeUser(user),
-    },
+    data: { user },
   });
 });
 
 const changePassword = catchAsync(async (req, res, next) => {
   const { currentPassword, newPassword } = req.body;
+
   const user = await User.findById(req.user._id).select('+password');
-
-  if (!user) {
-    return next(new AppError('User not found', 404));
-  }
-
-  const isValid = await user.comparePassword(currentPassword);
-  if (!isValid) {
-    return next(new AppError('Current password is incorrect', 400));
+  if (!(await user.comparePassword(currentPassword))) {
+    return next(new AppError('Incorrect current password', 401));
   }
 
   user.password = newPassword;
-  user.passwordChangedAt = new Date();
+  user.passwordChangedAt = Date.now();
   await user.save();
-  await RefreshToken.deleteMany({ userId: user._id });
 
-  const session = await createAuthSession(user, req, res);
+  const accessToken = signAccessToken(user._id);
+  const refreshToken = signRefreshToken(user._id);
 
-  res.status(200).json({
-    status: 'success',
-    message: 'Password changed successfully',
-    accessToken: session.accessToken,
+  await RefreshToken.create({
+    token: refreshToken,
+    userId: user._id,
+    expiresAt: new Date(Date.now() + (parseInt(process.env.JWT_REFRESH_EXPIRES_IN, 10) || 7) * 24 * 60 * 60 * 1000),
   });
-});
 
-const getMe = catchAsync(async (req, res) => {
-  const user = await User.findById(req.user._id);
-
-  res.status(200).json({
-    status: 'success',
-    data: {
-      user: sanitizeUser(user),
-    },
-  });
+  sendTokenResponse(res, 200, user, accessToken, refreshToken);
 });
 
 module.exports = {
-  changePassword,
-  forgotPassword,
-  getMe,
+  register,
   login,
   logout,
   refreshToken,
-  register,
+  forgotPassword,
   resetPassword,
+  getMe,
   updateProfile,
+  changePassword,
 };

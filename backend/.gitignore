@@ -1,9 +1,30 @@
-node_modules
+# Dependency directories
+node_modules/
+
+# Local environment files
 .env
-coverage
+.env.local
+.env.*.local
+
+# Databases and storage
+data/
+db/
+
+# Log files
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.DS_Store
-src/uploads/*
-!src/uploads/.gitkeep
+.pnpm-debug.log*
+
+# User uploads / uploads
+src/uploads/
+uploads/
+
+# IDE / Editor folders
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

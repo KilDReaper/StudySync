@@ -1,80 +1,96 @@
-const StudySession = require('../models/StudySession');
 const Task = require('../models/Task');
 const Assignment = require('../models/Assignment');
-const User = require('../models/User');
+const StudySession = require('../models/StudySession');
 const catchAsync = require('../utils/catchAsync');
 
-const getDateRange = (days) => {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(end.getDate() - (days - 1));
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-  return { start, end };
-};
+const getAnalytics = catchAsync(async (req, res) => {
+  const userId = req.user._id;
 
-const aggregateStudyStats = async (userId, days) => {
-  const { start, end } = getDateRange(days);
-  return StudySession.aggregate([
+  const [completedTasks, pendingTasks] = await Promise.all([
+    Task.countDocuments({ userId, status: 'completed' }),
+    Task.countDocuments({ userId, status: 'pending' }),
+  ]);
+
+  const upcomingAssignments = await Assignment.find({
+    userId,
+    deadline: { $gte: new Date() },
+    submissionStatus: 'pending',
+  })
+    .sort({ deadline: 1 })
+    .limit(5);
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const weeklyStats = await StudySession.aggregate([
     {
       $match: {
         userId,
-        status: 'completed',
-        completedAt: { $gte: start, $lte: end },
-      },
-    },
-    {
-      $addFields: {
-        durationHours: {
-          $divide: [{ $subtract: ['$endTime', '$startTime'] }, 1000 * 60 * 60],
-        },
+        completed: true,
+        startTime: { $gte: sevenDaysAgo },
       },
     },
     {
       $group: {
-        _id: {
-          $dateToString: {
-            format: '%Y-%m-%d',
-            date: '$completedAt',
-          },
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime' } },
+        durationMs: {
+          $sum: { $subtract: ['$endTime', '$startTime'] },
         },
-        studyHours: { $sum: '$durationHours' },
-        sessions: { $sum: 1 },
       },
     },
-    { $sort: { _id: 1 } },
-  ]);
-};
-
-const getDashboardAnalytics = catchAsync(async (req, res) => {
-  const userId = req.user._id;
-  const user = await User.findById(userId).select('studyStreak totalStudyHours');
-
-  const [completedTasks, pendingTasks, upcomingAssignments, weeklyStudyStats, monthlyStudyStats] = await Promise.all([
-    Task.countDocuments({ userId, status: 'completed' }),
-    Task.countDocuments({ userId, status: { $ne: 'completed' } }),
-    Assignment.find({ userId, deadline: { $gte: new Date() } }).sort({ deadline: 1 }).limit(5),
-    aggregateStudyStats(userId, 7),
-    aggregateStudyStats(userId, 30),
+    {
+      $project: {
+        _id: 0,
+        date: '$_id',
+        hours: { $round: [{ $divide: ['$durationMs', 3600000] }, 2] },
+      },
+    },
+    { $sort: { date: 1 } },
   ]);
 
-  const totalStudyHours = user?.totalStudyHours || 0;
-  const currentStreak = user?.studyStreak || 0;
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  const monthlyStats = await StudySession.aggregate([
+    {
+      $match: {
+        userId,
+        completed: true,
+        startTime: { $gte: thirtyDaysAgo },
+      },
+    },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime' } },
+        durationMs: {
+          $sum: { $subtract: ['$endTime', '$startTime'] },
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        date: '$_id',
+        hours: { $round: [{ $divide: ['$durationMs', 3600000] }, 2] },
+      },
+    },
+    { $sort: { date: 1 } },
+  ]);
 
   res.status(200).json({
     status: 'success',
     data: {
-      totalStudyHours,
-      currentStreak,
+      totalStudyHours: req.user.totalStudyHours,
+      currentStreak: req.user.studyStreak,
       completedTasks,
       pendingTasks,
       upcomingAssignments,
-      weeklyStudyStatistics: weeklyStudyStats,
-      monthlyStudyStatistics: monthlyStudyStats,
+      weeklyStudyStatistics: weeklyStats,
+      monthlyStudyStatistics: monthlyStats,
     },
   });
 });
 
 module.exports = {
-  getDashboardAnalytics,
+  getAnalytics,
 };

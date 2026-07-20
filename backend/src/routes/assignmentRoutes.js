@@ -1,30 +1,35 @@
 const express = require('express');
-const { protect } = require('../middleware/authMiddleware');
-const validateRequest = require('../middleware/validationMiddleware');
-const { assignmentFileUpload } = require('../middleware/uploadMiddleware');
-const {
-  assignmentIdValidation,
-  createAssignmentValidation,
-  updateAssignmentValidation,
-} = require('../validators/assignmentValidators');
 const {
   createAssignment,
-  deleteAssignment,
-  getAssignment,
   getAssignments,
+  getAssignment,
   updateAssignment,
   updateSubmissionStatus,
+  deleteAssignment,
 } = require('../controllers/assignmentController');
+const { protect } = require('../middleware/authMiddleware');
+const validateRequest = require('../middleware/validationMiddleware');
+const upload = require('../middleware/uploadMiddleware');
+const {
+  createAssignmentValidation,
+  assignmentIdValidation,
+  updateAssignmentValidation,
+  updateStatusValidation,
+} = require('../validators/assignmentValidators');
 
 const router = express.Router();
 
 router.use(protect);
 
-router.get('/', getAssignments);
-router.post('/', assignmentFileUpload, createAssignmentValidation, validateRequest, createAssignment);
-router.get('/:id', assignmentIdValidation, validateRequest, getAssignment);
-router.patch('/:id', assignmentFileUpload, assignmentIdValidation, updateAssignmentValidation, validateRequest, updateAssignment);
-router.patch('/:id/status', assignmentIdValidation, validateRequest, updateSubmissionStatus);
-router.delete('/:id', assignmentIdValidation, validateRequest, deleteAssignment);
+router.route('/')
+  .post(upload.single('fileAttachment'), createAssignmentValidation, validateRequest, createAssignment)
+  .get(getAssignments);
+
+router.route('/:id')
+  .get(assignmentIdValidation, validateRequest, getAssignment)
+  .patch(upload.single('fileAttachment'), updateAssignmentValidation, validateRequest, updateAssignment)
+  .delete(assignmentIdValidation, validateRequest, deleteAssignment);
+
+router.patch('/:id/status', updateStatusValidation, validateRequest, updateSubmissionStatus);
 
 module.exports = router;

@@ -1,10 +1,19 @@
 const { body, param } = require('express-validator');
 
-const habitIdValidation = [param('id').isMongoId().withMessage('Invalid habit id')];
-
 const createHabitValidation = [
-  body('title').trim().notEmpty().withMessage('Title is required'),
-  body('icon').optional().trim(),
+  body('title')
+    .notEmpty()
+    .withMessage('Title is required')
+    .trim(),
+  body('icon')
+    .optional()
+    .trim(),
+];
+
+const habitIdValidation = [
+  param('id')
+    .isMongoId()
+    .withMessage('Invalid habit ID'),
 ];
 
 module.exports = {

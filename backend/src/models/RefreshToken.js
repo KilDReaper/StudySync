@@ -2,25 +2,20 @@ const mongoose = require('mongoose');
 
 const refreshTokenSchema = new mongoose.Schema(
   {
+    token: {
+      type: String,
+      required: true,
+      unique: true,
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
-      index: true,
     },
-    tokenHash: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true,
-    },
-    userAgent: String,
-    ipAddress: String,
     expiresAt: {
       type: Date,
       required: true,
     },
-    revokedAt: Date,
   },
   {
     timestamps: true,

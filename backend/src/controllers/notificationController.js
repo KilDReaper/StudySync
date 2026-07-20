@@ -3,15 +3,9 @@ const AppError = require('../utils/AppError');
 const catchAsync = require('../utils/catchAsync');
 const { buildPagination } = require('../utils/queryHelpers');
 
-const ownedQuery = (req, id) => (req.user.role === 'admin' ? { _id: id } : { _id: id, userId: req.user._id });
-
 const getNotifications = catchAsync(async (req, res) => {
   const { page, limit, skip } = buildPagination(req.query);
-  const filter = { userId: req.user.role === 'admin' ? { $exists: true } : req.user._id };
-
-  if (req.query.type) filter.type = req.query.type;
-  if (req.query.readStatus === 'true') filter.readStatus = true;
-  if (req.query.readStatus === 'false') filter.readStatus = false;
+  const filter = { userId: req.user._id };
 
   const [notifications, total] = await Promise.all([
     Notification.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
@@ -26,11 +20,11 @@ const getNotifications = catchAsync(async (req, res) => {
   });
 });
 
-const markNotificationRead = catchAsync(async (req, res, next) => {
+const markAsRead = catchAsync(async (req, res, next) => {
   const notification = await Notification.findOneAndUpdate(
-    ownedQuery(req, req.params.id),
-    { readStatus: true },
-    { new: true }
+    { _id: req.params.id, userId: req.user._id },
+    { read: true },
+    { new: true, runValidators: true }
   );
 
   if (!notification) {
@@ -44,19 +38,17 @@ const markNotificationRead = catchAsync(async (req, res, next) => {
   });
 });
 
-const markAllRead = catchAsync(async (req, res) => {
-  const filter = req.user.role === 'admin' ? {} : { userId: req.user._id };
-  const result = await Notification.updateMany(filter, { readStatus: true });
+const markAllAsRead = catchAsync(async (req, res) => {
+  await Notification.updateMany({ userId: req.user._id, read: false }, { read: true });
 
   res.status(200).json({
     status: 'success',
     message: 'All notifications marked as read',
-    data: { modifiedCount: result.modifiedCount },
   });
 });
 
 const deleteNotification = catchAsync(async (req, res, next) => {
-  const notification = await Notification.findOneAndDelete(ownedQuery(req, req.params.id));
+  const notification = await Notification.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
 
   if (!notification) {
     return next(new AppError('Notification not found', 404));
@@ -69,8 +61,8 @@ const deleteNotification = catchAsync(async (req, res, next) => {
 });
 
 module.exports = {
-  deleteNotification,
   getNotifications,
-  markAllRead,
-  markNotificationRead,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification,
 };

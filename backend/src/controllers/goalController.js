@@ -5,27 +5,16 @@ const { buildPagination } = require('../utils/queryHelpers');
 
 const ownedQuery = (req, id) => (req.user.role === 'admin' ? { _id: id } : { _id: id, userId: req.user._id });
 
-const syncGoalState = (goal) => {
-  goal.completedHours = Math.max(0, goal.completedHours);
-  if (goal.completedHours >= goal.targetHours) {
-    goal.completedHours = goal.targetHours;
-    goal.isCompleted = true;
-    if (!goal.completedAt) {
-      goal.completedAt = new Date();
-    }
-  } else {
-    goal.isCompleted = false;
-    goal.completedAt = undefined;
-  }
-};
-
 const createGoal = catchAsync(async (req, res) => {
+  const { title, targetHours, completedHours, deadline } = req.body;
+
   const goal = await Goal.create({
-    ...req.body,
+    title,
+    targetHours,
+    completedHours: completedHours || 0,
+    deadline,
     userId: req.user._id,
   });
-  syncGoalState(goal);
-  await goal.save();
 
   res.status(201).json({
     status: 'success',
@@ -36,17 +25,10 @@ const createGoal = catchAsync(async (req, res) => {
 
 const getGoals = catchAsync(async (req, res) => {
   const { page, limit, skip } = buildPagination(req.query);
-  const filter = { userId: req.user.role === 'admin' ? { $exists: true } : req.user._id };
-
-  if (req.query.search) filter.title = new RegExp(req.query.search, 'i');
-  if (req.query.completed === 'true') filter.isCompleted = true;
-  if (req.query.completed === 'false') filter.isCompleted = false;
-
-  const sortBy = req.query.sortBy || 'deadline';
-  const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+  const filter = req.user.role === 'admin' ? {} : { userId: req.user._id };
 
   const [goals, total] = await Promise.all([
-    Goal.find(filter).sort({ [sortBy]: sortOrder }).skip(skip).limit(limit),
+    Goal.find(filter).sort({ deadline: 1 }).skip(skip).limit(limit),
     Goal.countDocuments(filter),
   ]);
 
@@ -58,31 +40,16 @@ const getGoals = catchAsync(async (req, res) => {
   });
 });
 
-const getGoal = catchAsync(async (req, res, next) => {
-  const goal = await Goal.findOne(ownedQuery(req, req.params.id));
-
-  if (!goal) {
-    return next(new AppError('Goal not found', 404));
-  }
-
-  res.status(200).json({
-    status: 'success',
-    data: { goal },
-  });
-});
-
 const updateGoal = catchAsync(async (req, res, next) => {
-  const goal = await Goal.findOneAndUpdate(ownedQuery(req, req.params.id), req.body, {
-    new: true,
-    runValidators: true,
-  });
+  const goal = await Goal.findOneAndUpdate(
+    ownedQuery(req, req.params.id),
+    req.body,
+    { new: true, runValidators: true }
+  );
 
   if (!goal) {
     return next(new AppError('Goal not found', 404));
   }
-
-  syncGoalState(goal);
-  await goal.save();
 
   res.status(200).json({
     status: 'success',
@@ -92,26 +59,27 @@ const updateGoal = catchAsync(async (req, res, next) => {
 });
 
 const updateGoalProgress = catchAsync(async (req, res, next) => {
-  const goal = await Goal.findOne(ownedQuery(req, req.params.id));
+  const { completedHours } = req.body;
+
+  const goal = await Goal.findOneAndUpdate(
+    ownedQuery(req, req.params.id),
+    { completedHours },
+    { new: true, runValidators: true }
+  );
 
   if (!goal) {
     return next(new AppError('Goal not found', 404));
   }
 
-  goal.completedHours = req.body.completedHours;
-  syncGoalState(goal);
-  await goal.save();
-
   res.status(200).json({
     status: 'success',
-    message: goal.isCompleted ? 'Goal completed successfully' : 'Goal progress updated successfully',
+    message: 'Goal progress updated successfully',
     data: { goal },
   });
 });
 
 const deleteGoal = catchAsync(async (req, res, next) => {
   const goal = await Goal.findOneAndDelete(ownedQuery(req, req.params.id));
-
   if (!goal) {
     return next(new AppError('Goal not found', 404));
   }
@@ -124,9 +92,8 @@ const deleteGoal = catchAsync(async (req, res, next) => {
 
 module.exports = {
   createGoal,
-  deleteGoal,
-  getGoal,
   getGoals,
   updateGoal,
   updateGoalProgress,
+  deleteGoal,
 };

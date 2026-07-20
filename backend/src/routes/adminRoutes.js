@@ -1,31 +1,33 @@
 const express = require('express');
+const {
+  submitReport,
+  getUsers,
+  deleteUser,
+  getPlatformStats,
+  getReports,
+  updateReport,
+} = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware');
-const adminMiddleware = require('../middleware/adminMiddleware');
+const { restrictTo } = require('../middleware/adminMiddleware');
 const validateRequest = require('../middleware/validationMiddleware');
 const {
   createReportValidation,
-  reportIdValidation,
   updateReportValidation,
-  userIdValidation,
+  userIdParamValidation,
 } = require('../validators/adminValidators');
-const {
-  createReport,
-  deleteUser,
-  getPlatformStatistics,
-  getReports,
-  getUsers,
-  updateReport,
-} = require('../controllers/adminController');
 
 const router = express.Router();
 
 router.use(protect);
 
-router.post('/reports', createReportValidation, validateRequest, createReport);
-router.get('/users', adminMiddleware, getUsers);
-router.delete('/users/:id', adminMiddleware, userIdValidation, validateRequest, deleteUser);
-router.get('/stats', adminMiddleware, getPlatformStatistics);
-router.get('/reports', adminMiddleware, getReports);
-router.patch('/reports/:id', adminMiddleware, reportIdValidation, updateReportValidation, validateRequest, updateReport);
+router.post('/reports', createReportValidation, validateRequest, submitReport);
+
+router.use(restrictTo('admin'));
+
+router.get('/users', getUsers);
+router.delete('/users/:id', userIdParamValidation, validateRequest, deleteUser);
+router.get('/stats', getPlatformStats);
+router.get('/reports', getReports);
+router.patch('/reports/:id', updateReportValidation, validateRequest, updateReport);
 
 module.exports = router;

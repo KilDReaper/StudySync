@@ -6,18 +6,16 @@ const studySessionSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Title is required'],
       trim: true,
-      index: true,
     },
     description: {
       type: String,
-      default: '',
       trim: true,
+      default: '',
     },
     subject: {
       type: String,
       required: [true, 'Subject is required'],
       trim: true,
-      index: true,
     },
     startTime: {
       type: Date,
@@ -27,17 +25,14 @@ const studySessionSchema = new mongoose.Schema(
       type: Date,
       required: [true, 'End time is required'],
     },
-    status: {
-      type: String,
-      enum: ['pending', 'completed'],
-      default: 'pending',
-      index: true,
-    },
     priority: {
       type: String,
       enum: ['low', 'medium', 'high'],
       default: 'medium',
-      index: true,
+    },
+    completed: {
+      type: Boolean,
+      default: false,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -45,14 +40,10 @@ const studySessionSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    completedAt: Date,
   },
   {
     timestamps: true,
   }
 );
-
-studySessionSchema.index({ userId: 1, startTime: -1 });
-studySessionSchema.index({ userId: 1, status: 1 });
 
 module.exports = mongoose.model('StudySession', studySessionSchema);

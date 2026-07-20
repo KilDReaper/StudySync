@@ -1,8 +1,7 @@
-const buildPagination = (query = {}) => {
+const buildPagination = (query) => {
   const page = Math.max(parseInt(query.page, 10) || 1, 1);
-  const limit = Math.min(Math.max(parseInt(query.limit, 10) || 10, 1), 100);
+  const limit = Math.max(Math.min(parseInt(query.limit, 10) || 10, 100), 1);
   const skip = (page - 1) * limit;
-
   return { page, limit, skip };
 };
 

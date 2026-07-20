@@ -54,7 +54,7 @@ const createHabit = catchAsync(async (req, res, next) => {
 
 const getHabits = catchAsync(async (req, res) => {
   const { page, limit, skip } = buildPagination(req.query);
-  const filter = { userId: req.user.role === 'admin' ? { $exists: true } : req.user._id };
+  const filter = req.user.role === 'admin' ? {} : { userId: req.user._id };
 
   const [habits, total] = await Promise.all([
     Habit.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),

@@ -6,12 +6,11 @@ const goalSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Title is required'],
       trim: true,
-      index: true,
     },
     targetHours: {
       type: Number,
-      required: [true, 'Target hours is required'],
-      min: 0,
+      required: [true, 'Target hours are required'],
+      min: 0.1,
     },
     completedHours: {
       type: Number,
@@ -21,13 +20,7 @@ const goalSchema = new mongoose.Schema(
     deadline: {
       type: Date,
       required: [true, 'Deadline is required'],
-      index: true,
     },
-    isCompleted: {
-      type: Boolean,
-      default: false,
-    },
-    completedAt: Date,
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -39,7 +32,5 @@ const goalSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
-goalSchema.index({ userId: 1, deadline: 1 });
 
 module.exports = mongoose.model('Goal', goalSchema);

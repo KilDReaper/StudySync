@@ -1,22 +1,38 @@
 const { body, param } = require('express-validator');
 
-const userIdValidation = [param('id').isMongoId().withMessage('Invalid user id')];
-const reportIdValidation = [param('id').isMongoId().withMessage('Invalid report id')];
-
 const createReportValidation = [
-  body('contentType').trim().notEmpty().withMessage('Content type is required'),
-  body('contentId').isMongoId().withMessage('Content id must be a valid MongoDB id'),
-  body('reason').trim().notEmpty().withMessage('Reason is required'),
+  body('contentType')
+    .isIn(['task', 'session', 'habit', 'assignment'])
+    .withMessage('Content type must be task, session, habit, or assignment'),
+  body('contentId')
+    .isMongoId()
+    .withMessage('Invalid content ID'),
+  body('reason')
+    .notEmpty()
+    .withMessage('Reason is required')
+    .trim(),
 ];
 
 const updateReportValidation = [
-  body('status').isIn(['pending', 'reviewed', 'resolved', 'rejected']).withMessage('Invalid report status'),
-  body('notes').optional().trim(),
+  param('id')
+    .isMongoId()
+    .withMessage('Invalid report ID'),
+  body('status')
+    .isIn(['reviewed', 'resolved'])
+    .withMessage('Status must be reviewed or resolved'),
+  body('notes')
+    .optional()
+    .trim(),
+];
+
+const userIdParamValidation = [
+  param('id')
+    .isMongoId()
+    .withMessage('Invalid user ID'),
 ];
 
 module.exports = {
   createReportValidation,
-  reportIdValidation,
   updateReportValidation,
-  userIdValidation,
+  userIdParamValidation,
 };

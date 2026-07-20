@@ -8,8 +8,10 @@ const router = express.Router();
 
 router.use(protect);
 
-router.get('/', getHabits);
-router.post('/', createHabitValidation, validateRequest, createHabit);
+router.route('/')
+  .post(createHabitValidation, validateRequest, createHabit)
+  .get(getHabits);
+
 router.patch('/:id/complete', habitIdValidation, validateRequest, markHabitComplete);
 router.get('/:id/streak', habitIdValidation, validateRequest, viewStreak);
 router.delete('/:id', habitIdValidation, validateRequest, deleteHabit);

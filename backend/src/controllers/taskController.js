@@ -6,8 +6,14 @@ const { buildPagination } = require('../utils/queryHelpers');
 const ownedQuery = (req, id) => (req.user.role === 'admin' ? { _id: id } : { _id: id, userId: req.user._id });
 
 const createTask = catchAsync(async (req, res) => {
+  const { title, description, dueDate, priority, status } = req.body;
+
   const task = await Task.create({
-    ...req.body,
+    title,
+    description,
+    dueDate,
+    priority,
+    status,
     userId: req.user._id,
   });
 
@@ -20,22 +26,20 @@ const createTask = catchAsync(async (req, res) => {
 
 const getTasks = catchAsync(async (req, res) => {
   const { page, limit, skip } = buildPagination(req.query);
-  const filter = { userId: req.user.role === 'admin' ? { $exists: true } : req.user._id };
+  const filter = req.user.role === 'admin' ? {} : { userId: req.user._id };
 
-  if (req.query.status) filter.status = req.query.status;
-  if (req.query.priority) filter.priority = req.query.priority;
+  if (req.query.status) {
+    filter.status = req.query.status;
+  }
+  if (req.query.priority) {
+    filter.priority = req.query.priority;
+  }
   if (req.query.search) {
-    filter.$or = [
-      { title: new RegExp(req.query.search, 'i') },
-      { description: new RegExp(req.query.search, 'i') },
-    ];
+    filter.title = { $regex: req.query.search, $options: 'i' };
   }
 
-  const sortBy = req.query.sortBy || 'createdAt';
-  const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
-
   const [tasks, total] = await Promise.all([
-    Task.find(filter).sort({ [sortBy]: sortOrder }).skip(skip).limit(limit),
+    Task.find(filter).sort({ dueDate: 1 }).skip(skip).limit(limit),
     Task.countDocuments(filter),
   ]);
 
@@ -49,7 +53,6 @@ const getTasks = catchAsync(async (req, res) => {
 
 const getTask = catchAsync(async (req, res, next) => {
   const task = await Task.findOne(ownedQuery(req, req.params.id));
-
   if (!task) {
     return next(new AppError('Task not found', 404));
   }
@@ -61,10 +64,11 @@ const getTask = catchAsync(async (req, res, next) => {
 });
 
 const updateTask = catchAsync(async (req, res, next) => {
-  const task = await Task.findOneAndUpdate(ownedQuery(req, req.params.id), req.body, {
-    new: true,
-    runValidators: true,
-  });
+  const task = await Task.findOneAndUpdate(
+    ownedQuery(req, req.params.id),
+    req.body,
+    { new: true, runValidators: true }
+  );
 
   if (!task) {
     return next(new AppError('Task not found', 404));
@@ -79,7 +83,6 @@ const updateTask = catchAsync(async (req, res, next) => {
 
 const deleteTask = catchAsync(async (req, res, next) => {
   const task = await Task.findOneAndDelete(ownedQuery(req, req.params.id));
-
   if (!task) {
     return next(new AppError('Task not found', 404));
   }
@@ -92,8 +95,8 @@ const deleteTask = catchAsync(async (req, res, next) => {
 
 module.exports = {
   createTask,
-  deleteTask,
-  getTask,
   getTasks,
+  getTask,
   updateTask,
+  deleteTask,
 };

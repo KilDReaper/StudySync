@@ -1,33 +1,20 @@
 const mongoose = require('mongoose');
 
-const fileSchema = new mongoose.Schema(
-  {
-    url: String,
-    filename: String,
-    mimetype: String,
-    size: Number,
-  },
-  { _id: false }
-);
-
 const assignmentSchema = new mongoose.Schema(
   {
     title: {
       type: String,
       required: [true, 'Title is required'],
       trim: true,
-      index: true,
     },
     subject: {
       type: String,
       required: [true, 'Subject is required'],
       trim: true,
-      index: true,
     },
     deadline: {
       type: Date,
       required: [true, 'Deadline is required'],
-      index: true,
     },
     progress: {
       type: Number,
@@ -35,12 +22,14 @@ const assignmentSchema = new mongoose.Schema(
       min: 0,
       max: 100,
     },
-    fileAttachment: fileSchema,
+    fileAttachment: {
+      type: String,
+      default: '',
+    },
     submissionStatus: {
       type: String,
-      enum: ['not-submitted', 'submitted', 'graded'],
-      default: 'not-submitted',
-      index: true,
+      enum: ['pending', 'submitted'],
+      default: 'pending',
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -53,7 +42,5 @@ const assignmentSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
-assignmentSchema.index({ userId: 1, deadline: 1 });
 
 module.exports = mongoose.model('Assignment', assignmentSchema);
