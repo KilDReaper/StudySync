@@ -1,158 +1,246 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/session_model.dart';
 import '../models/habit_model.dart';
+import '../models/task_model.dart';
+import '../services/api_service.dart';
 
 class TrackerProvider extends ChangeNotifier {
   List<SessionModel> _sessions = [];
   List<HabitModel> _habits = [];
+  List<TaskModel> _tasks = [];
+  bool _isLoading = false;
 
   List<SessionModel> get sessions => _sessions;
   List<HabitModel> get habits => _habits;
+  List<TaskModel> get tasks => _tasks;
+  bool get isLoading => _isLoading;
 
-  // Load data from SharedPreferences or initialize default mock data
+  // Load data from the MongoDB backend API
   Future<void> loadData() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    final sessionsJson = prefs.getString('ss_sessions');
-    final habitsJson = prefs.getString('ss_habits');
+    _isLoading = true;
+    // Don't call notifyListeners here if called during build,
+    // but tryAutoLogin / main call is fine. To be safe, delay it.
+    Future.microtask(() => notifyListeners());
 
-    if (sessionsJson != null) {
-      final List<dynamic> decoded = jsonDecode(sessionsJson);
-      _sessions = decoded.map((item) => SessionModel.fromJson(item)).toList();
-    } else {
-      _sessions = [
-        SessionModel(
-          id: 'session-1',
-          subject: 'Mathematics',
-          topic: 'Calculus — Derivatives',
-          duration: 45,
-          progress: 60,
-          done: false,
-        ),
-        SessionModel(
-          id: 'session-2',
-          subject: 'Physics',
-          topic: 'Wave Mechanics',
-          duration: 60,
-          progress: 100,
-          done: true,
-        ),
-      ];
+    try {
+      final responses = await Future.wait([
+        ApiService.get('/study-sessions'),
+        ApiService.get('/habits'),
+        ApiService.get('/tasks'),
+      ]);
+
+      final sessionsRes = responses[0];
+      final habitsRes = responses[1];
+      final tasksRes = responses[2];
+
+      if (sessionsRes.statusCode == 200) {
+        final body = jsonDecode(sessionsRes.body);
+        final List<dynamic> decoded = body['data']['sessions'] ?? [];
+        _sessions = decoded.map((item) => SessionModel.fromJson(item)).toList();
+      }
+
+      if (habitsRes.statusCode == 200) {
+        final body = jsonDecode(habitsRes.body);
+        final List<dynamic> decoded = body['data']['habits'] ?? [];
+        _habits = decoded.map((item) => HabitModel.fromJson(item)).toList();
+      }
+
+      if (tasksRes.statusCode == 200) {
+        final body = jsonDecode(tasksRes.body);
+        final List<dynamic> decoded = body['data']['tasks'] ?? [];
+        _tasks = decoded.map((item) => TaskModel.fromJson(item)).toList();
+      }
+    } catch (e) {
+      // Keep existing data or silent fail
     }
 
-    if (habitsJson != null) {
-      final List<dynamic> decoded = jsonDecode(habitsJson);
-      _habits = decoded.map((item) => HabitModel.fromJson(item)).toList();
-    } else {
-      _habits = [
-        HabitModel(
-          id: 'habit-1',
-          name: 'Read 30 min',
-          icon: '📖',
-          streak: 7,
-          done: true,
-        ),
-        HabitModel(
-          id: 'habit-2',
-          name: 'Exercise',
-          icon: '🏃',
-          streak: 14,
-          done: true,
-        ),
-        HabitModel(
-          id: 'habit-3',
-          name: 'Meditate',
-          icon: '🧘',
-          streak: 3,
-          done: false,
-        ),
-        HabitModel(
-          id: 'habit-4',
-          name: 'Water 8 cups',
-          icon: '💧',
-          streak: 21,
-          done: false,
-        ),
-      ];
-    }
-
+    _isLoading = false;
     notifyListeners();
   }
 
-  // Save data to SharedPreferences
-  Future<void> saveData() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    final sessionsJson = jsonEncode(_sessions.map((s) => s.toJson()).toList());
-    final habitsJson = jsonEncode(_habits.map((h) => h.toJson()).toList());
-
-    await prefs.setString('ss_sessions', sessionsJson);
-    await prefs.setString('ss_habits', habitsJson);
-  }
-
   // Toggle study session done status
-  void toggleSession(String id) {
+  Future<void> toggleSession(String id) async {
     final index = _sessions.indexWhere((s) => s.id == id);
     if (index != -1) {
-      _sessions[index].done = !_sessions[index].done;
-      if (_sessions[index].done) {
-        _sessions[index].progress = 100;
-      } else {
-        _sessions[index].progress = 60; // Mock default progress for active card
-      }
-      saveData();
+      final session = _sessions[index];
+      final newDone = !session.done;
+      session.done = newDone;
+      session.progress = newDone ? 100 : 60;
       notifyListeners();
+
+      try {
+        if (newDone) {
+          await ApiService.patch('/study-sessions/$id/complete', {});
+        } else {
+          await ApiService.patch('/study-sessions/$id', {'status': 'pending'});
+        }
+      } catch (e) {
+        // failed silently
+      }
+      loadData();
     }
   }
 
   // Toggle habit done status
-  void toggleHabit(String id) {
+  Future<void> toggleHabit(String id) async {
     final index = _habits.indexWhere((h) => h.id == id);
     if (index != -1) {
-      _habits[index].done = !_habits[index].done;
-      if (_habits[index].done) {
-        _habits[index].streak += 1;
+      final habit = _habits[index];
+      final newDone = !habit.done;
+      habit.done = newDone;
+      if (newDone) {
+        habit.streak += 1;
       } else {
-        _habits[index].streak = (_habits[index].streak - 1).clamp(0, 999);
+        habit.streak = (habit.streak - 1).clamp(0, 999);
       }
-      saveData();
       notifyListeners();
+
+      try {
+        // Backend handles completedDates array push inside markHabitComplete
+        await ApiService.patch('/habits/$id/complete', {});
+      } catch (e) {
+        // error
+      }
+      loadData();
     }
   }
 
-  // Add a new session
-  void addSession(String subject, String topic, int duration) {
-    final newSession = SessionModel(
-      id: 'session-${DateTime.now().millisecondsSinceEpoch}',
-      subject: subject,
-      topic: topic,
-      duration: duration,
-      progress: 0,
-      done: false,
-    );
-    _sessions.add(newSession);
-    saveData();
-    notifyListeners();
+  // Toggle task completed status
+  Future<void> toggleTask(String id) async {
+    final index = _tasks.indexWhere((t) => t.id == id);
+    if (index != -1) {
+      final task = _tasks[index];
+      final newStatus = task.status == 'completed' ? 'pending' : 'completed';
+      task.status = newStatus;
+      notifyListeners();
+
+      try {
+        await ApiService.patch('/tasks/$id', {
+          'status': newStatus,
+        });
+      } catch (e) {
+        // error
+      }
+      loadData();
+    }
+  }
+
+  // Add a new study session
+  Future<void> addSession(String subject, String topic, int duration) async {
+    final now = DateTime.now();
+    try {
+      await ApiService.post('/study-sessions', {
+        'title': topic,
+        'description': 'Focus Session',
+        'subject': subject,
+        'startTime':
+            now.subtract(Duration(minutes: duration)).toIso8601String(),
+        'endTime': now.toIso8601String(),
+        'priority': 'medium',
+        'status': 'pending',
+      });
+      loadData();
+    } catch (e) {
+      // error
+    }
+  }
+
+  // Add a new completed focus session (from focus timer completion)
+  Future<void> addCompletedFocusSession(
+      String subject, String topic, int durationInMinutes) async {
+    final now = DateTime.now();
+    try {
+      final res = await ApiService.post('/study-sessions', {
+        'title': topic,
+        'description': 'Focus Session completed via Timer',
+        'subject': subject,
+        'startTime': now
+            .subtract(Duration(minutes: durationInMinutes))
+            .toIso8601String(),
+        'endTime': now.toIso8601String(),
+        'priority': 'high',
+        'status': 'completed',
+      });
+
+      if (res.statusCode == 201) {
+        final body = jsonDecode(res.body);
+        final sessionId =
+            body['data']['session']['_id'] ?? body['data']['session']['id'];
+        if (sessionId != null) {
+          // Invoke the specific completion endpoint to increment hours studied on backend
+          await ApiService.patch('/study-sessions/$sessionId/complete', {});
+        }
+      }
+      loadData();
+    } catch (e) {
+      // error
+    }
   }
 
   // Add a new habit
-  void addHabit(String name, String icon, int streak) {
-    final newHabit = HabitModel(
-      id: 'habit-${DateTime.now().millisecondsSinceEpoch}',
-      name: name,
-      icon: icon,
-      streak: streak,
-      done: false,
-    );
-    _habits.add(newHabit);
-    saveData();
-    notifyListeners();
+  Future<void> addHabit(String name, String icon, int streak) async {
+    try {
+      await ApiService.post('/habits', {
+        'title': name,
+        'icon': icon,
+      });
+      loadData();
+    } catch (e) {
+      // error
+    }
+  }
+
+  // Add a new task
+  Future<void> addTask(
+      String title, String subject, DateTime dueDate, String priority) async {
+    try {
+      await ApiService.post('/tasks', {
+        'title': title,
+        'description': 'Subject: $subject',
+        'subject': subject,
+        'dueDate': dueDate.toIso8601String(),
+        'priority': priority.toLowerCase(),
+        'status': 'pending',
+      });
+      loadData();
+    } catch (e) {
+      // error
+    }
+  }
+
+  // Delete study session
+  Future<void> deleteSession(String id) async {
+    try {
+      await ApiService.delete('/study-sessions/$id');
+      loadData();
+    } catch (e) {
+      // error
+    }
+  }
+
+  // Delete habit
+  Future<void> deleteHabit(String id) async {
+    try {
+      await ApiService.delete('/habits/$id');
+      loadData();
+    } catch (e) {
+      // error
+    }
+  }
+
+  // Delete task
+  Future<void> deleteTask(String id) async {
+    try {
+      await ApiService.delete('/tasks/$id');
+      loadData();
+    } catch (e) {
+      // error
+    }
   }
 
   // --- Computed Stats ---
-  
+
   // Hours studied (duration sum of completed sessions in hours)
   double get totalStudyHours {
     final totalMinutes = _sessions.fold<int>(0, (sum, item) {
@@ -161,11 +249,16 @@ class TrackerProvider extends ChangeNotifier {
     return totalMinutes / 60.0;
   }
 
+  // Tasks completed percentage
+  double get tasksDonePercentage {
+    if (_tasks.isEmpty) return 0.0;
+    final completed = _tasks.where((t) => t.status == 'completed').length;
+    return (completed / _tasks.length);
+  }
+
   // Habits completed ratio (e.g., "5/7")
   String get habitsRatioString {
     final completed = _habits.where((h) => h.done).length;
-    // The Figma defaults show "5/7" in the dashboard, so if habits are 4, we display completed/total
-    // Let's use actual counts
     return '$completed/${_habits.length}';
   }
 
@@ -179,7 +272,8 @@ class TrackerProvider extends ChangeNotifier {
   // Highest streak count among habits
   int get highestStreakCount {
     if (_habits.isEmpty) return 0;
-    return _habits.fold<int>(0, (max, item) => item.streak > max ? item.streak : max);
+    return _habits.fold<int>(
+        0, (max, item) => item.streak > max ? item.streak : max);
   }
 
   // Remaining habits to complete today

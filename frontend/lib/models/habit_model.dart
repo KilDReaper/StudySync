@@ -14,20 +14,32 @@ class HabitModel {
   });
 
   factory HabitModel.fromJson(Map<String, dynamic> json) {
+    bool isCompletedToday = false;
+    if (json['done'] != null) {
+      isCompletedToday = json['done'];
+    } else if (json['completedDates'] != null) {
+      final List<dynamic> dates = json['completedDates'];
+      final todayStr = DateTime.now().toUtc().toIso8601String().substring(0, 10);
+      isCompletedToday = dates.any((date) => date.toString().startsWith(todayStr));
+    }
+
     return HabitModel(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
+      id: json['_id'] ?? json['id'] ?? '',
+      name: json['title'] ?? json['name'] ?? '',
       icon: json['icon'] ?? '📖',
-      streak: json['streak'] ?? 0,
-      done: json['done'] ?? false,
+      streak: json['streakCount'] ?? json['streak'] ?? 0,
+      done: isCompletedToday,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      '_id': id,
+      'title': name,
       'name': name,
       'icon': icon,
+      'streakCount': streak,
       'streak': streak,
       'done': done,
     };

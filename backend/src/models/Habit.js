@@ -12,6 +12,10 @@ const habitSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    icon: {
+      type: String,
+      default: '📖',
+    },
     completedDates: {
       type: [Date],
       default: [],

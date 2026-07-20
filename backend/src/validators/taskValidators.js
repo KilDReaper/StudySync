@@ -5,6 +5,7 @@ const taskIdValidation = [param('id').isMongoId().withMessage('Invalid task id')
 const createTaskValidation = [
   body('title').trim().notEmpty().withMessage('Title is required'),
   body('description').optional().trim(),
+  body('subject').optional().trim(),
   body('dueDate').optional().isISO8601().withMessage('Due date must be a valid date'),
   body('priority').optional().isIn(['low', 'medium', 'high']).withMessage('Invalid priority value'),
   body('status').optional().isIn(['pending', 'in-progress', 'completed']).withMessage('Invalid status value'),
@@ -13,6 +14,7 @@ const createTaskValidation = [
 const updateTaskValidation = [
   body('title').optional().trim().notEmpty().withMessage('Title cannot be empty'),
   body('description').optional().trim(),
+  body('subject').optional().trim(),
   body('dueDate').optional().isISO8601().withMessage('Due date must be a valid date'),
   body('priority').optional().isIn(['low', 'medium', 'high']).withMessage('Invalid priority value'),
   body('status').optional().isIn(['pending', 'in-progress', 'completed']).withMessage('Invalid status value'),

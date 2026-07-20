@@ -13,6 +13,11 @@ const taskSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
+    subject: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     dueDate: {
       type: Date,
       index: true,

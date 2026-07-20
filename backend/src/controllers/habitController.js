@@ -41,6 +41,7 @@ const createHabit = catchAsync(async (req, res, next) => {
 
   const habit = await Habit.create({
     title: req.body.title,
+    icon: req.body.icon || '📖',
     userId: req.user._id,
   });
 
